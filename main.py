@@ -25,8 +25,8 @@ import uvicorn
 from langchain_chroma import Chroma
 from chromadb.config import Settings
 from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
-from langchain.chains import create_history_aware_retriever, create_retrieval_chain
-from langchain.chains.combine_documents import create_stuff_documents_chain
+from langchain_classic.chains import create_history_aware_retriever, create_retrieval_chain
+from langchain_classic.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.messages import HumanMessage, AIMessage
 from langchain_core.documents import Document
@@ -86,10 +86,8 @@ def analyze_image_with_retry(image, retries=3):
             raise e
     raise Exception("Gemini API is too busy. Please try again.")
 
-def build_rag_chain():
-    """
-    Constructs the LangChain pipeline for answering questions.
-    """
+def buildragchain():
+    """Constructs the LangChain pipeline for answering questions."""
     llm = ChatGoogleGenerativeAI(
         model=MODEL_NAME,
         google_api_key=GOOGLE_API_KEY,
@@ -97,23 +95,30 @@ def build_rag_chain():
     )
     retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
 
-    # Sub-Chain A: Contextualize (Rephrase question based on history)
+    # Context-aware prompt for rephrasing query with history
     context_prompt = ChatPromptTemplate.from_messages([
-        ("system", "Rephrase the user question to be standalone based on the history."),
-        MessagesPlaceholder("chat_history"),
-        ("human", "{input}"),
+        ("system", "Rephrase the user question to be a standalone question, based on the chat history:\n{chat_history}\n{input}"),
+        MessagesPlaceholder(variable_name="chat_history"),
+        ("human", "{input}")
     ])
-    history_retriever = create_history_aware_retriever(llm, retriever, context_prompt)
 
-    # Sub-Chain B: Answer (Generate answer from retrieved context)
+    # History-aware retriever (replaces old pattern)
+    history_retriever = create_history_aware_retriever(
+        llm, retriever, context_prompt
+    )
+
+    # QA prompt for answering from context
     qa_prompt = ChatPromptTemplate.from_messages([
-        ("system", "Answer strictly based on the Context provided:\n\n{context}"),
-        MessagesPlaceholder("chat_history"),
-        ("human", "{input}"),
+        ("system", "Answer the question based only on the following context:\n{context}"),
+        MessagesPlaceholder(variable_name="chat_history"),
+        ("human", "{input}")
     ])
-    qa_chain = create_stuff_documents_chain(llm, qa_prompt)
 
-    return create_retrieval_chain(history_retriever, qa_chain)
+    # Document chain and full retrieval chain
+    qa_chain = create_stuff_documents_chain(llm, qa_prompt)
+    retrieval_chain = create_retrieval_chain(history_retriever, qa_chain)
+
+    return retrieval_chain
 
 # ==============================================================================
 # SECTION 4: API ENDPOINTS (THE INTERFACE)
@@ -177,7 +182,7 @@ async def chat(request: ChatInput):
     if sid not in chat_sessions: chat_sessions[sid] = []
 
     try:
-        chain = build_rag_chain()
+        chain = buildragchain()
         response = chain.invoke({"input": request.message, "chat_history": chat_sessions[sid]})
         
         # Save to memory
