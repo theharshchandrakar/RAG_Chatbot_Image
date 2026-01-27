@@ -1,4 +1,4 @@
-# Image RAG Chatbot 🤖🖼️
+# Image RAG Chatbot 🤖
 
 A powerful backend API that allows users to **chat** with their images using Retrieval-Augmented Generation (RAG). This project analyzes images, indexes their visual content, and enables context-aware Q&A using Google's Gemini 2.5 Flash model.
 
